@@ -50,6 +50,8 @@ class UpgradeFlow:
         # fallback reuses this connection instead of opening a new one,
         # avoiding an unexpected mid-flow password prompt.
         self.ssh_control_path = ssh_control_path
+        self.ssh_tmos_shell = False
+        self.ssh_password: Optional[str] = None
         self._preflight_results: Optional[List[CheckResult]] = None
         self._storage_result: Optional[CheckResult] = None
         self._upload_paths: List[str] = []
@@ -367,6 +369,8 @@ class UpgradeFlow:
                 image_name,
                 ssh_user=self.settings.scp_user,
                 ssh_control_path=self.ssh_control_path,
+                ssh_tmos_shell=self.ssh_tmos_shell,
+                ssh_password=self.ssh_password,
             )
             required_images_present = required_images_present and image.found
         if not expected_names:

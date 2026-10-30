@@ -19,6 +19,7 @@ if str(SRC_ROOT) not in sys.path:
 from f5upgrade.execution import (  # noqa: E402
     VolumeState,
     _execution_role_allowed,
+    _run_bash_via_ssh,
     check_image_present,
     check_license_dates,
     exec_install_standby,
@@ -194,6 +195,34 @@ class ScpControlMasterTests(unittest.TestCase):
 
 
 class LicenseValidationOutputTests(unittest.TestCase):
+    def test_windows_tmos_license_fallback_uses_util_bash_and_startup_password(self):
+        with (
+            patch("f5upgrade.execution.os.name", "nt"),
+            patch(
+                "f5upgrade.execution.run_windows_ssh_with_password",
+                return_value=SimpleNamespace(
+                    returncode=0,
+                    stdout="Service check date : 20260116",
+                    stderr="",
+                ),
+            ) as ssh_run,
+        ):
+            result = _run_bash_via_ssh(
+                "192.0.2.10",
+                "operator",
+                "grep -F 'Service check date' /config/bigip.license",
+                timeout=60,
+                tmos_shell=True,
+                password="password",
+            )
+
+        self.assertIn("Service check date", result["commandResult"])
+        self.assertEqual("password", ssh_run.call_args.args[1])
+        self.assertEqual(
+            "run util bash -c 'grep -F '\"'\"'Service check date'\"'\"' /config/bigip.license'",
+            ssh_run.call_args.args[0][-1],
+        )
+
     def test_license_validation_prefers_existing_ssh_controlmaster(self):
         client = SimpleNamespace(host="192.0.2.10")
         responses = [

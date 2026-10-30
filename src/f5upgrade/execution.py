@@ -318,6 +318,8 @@ def _run_bash_via_ssh(
     command: str,
     timeout: int,
     control_path: Optional[str] = None,
+    tmos_shell: bool = False,
+    password: Optional[str] = None,
 ) -> Dict[str, str]:
     """
     Run a read-only bash command over SSH and wrap stdout the same way
@@ -342,14 +344,27 @@ def _run_bash_via_ssh(
         "ssh",
         *ssh_opts,
         f"{ssh_user}@{ssh_host}",
-        f"bash -lc {shlex.quote(command)}",
+        (
+            f"run util bash -c {shlex.quote(command)}"
+            if tmos_shell
+            else f"bash -lc {shlex.quote(command)}"
+        ),
     ]
-    completed = subprocess.run(
-        ssh_command,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    if os.name == "nt" and password:
+        completed = run_windows_ssh_with_password(
+            ssh_command,
+            password,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    else:
+        completed = subprocess.run(
+            ssh_command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
     if completed.returncode != 0:
         raise RuntimeError(
             f"SSH command failed (exit {completed.returncode}): "
@@ -368,6 +383,8 @@ def _run_bash_with_retry(
     ssh_host: Optional[str] = None,
     ssh_user: Optional[str] = None,
     ssh_control_path: Optional[str] = None,
+    ssh_tmos_shell: bool = False,
+    ssh_password: Optional[str] = None,
 ) -> Any:
     """
     Run a bash command via REST, retrying on transient timeout/connection
@@ -405,6 +422,8 @@ def _run_bash_with_retry(
                 command,
                 timeout=timeout,
                 control_path=ssh_control_path,
+                tmos_shell=ssh_tmos_shell,
+                password=ssh_password,
             )
         except Exception as ssh_exc:
             raise RuntimeError(
@@ -425,6 +444,8 @@ def _run_readonly_bash_prefer_ssh(
     retry_delay: int,
     ssh_user: Optional[str] = None,
     ssh_control_path: Optional[str] = None,
+    ssh_tmos_shell: bool = False,
+    ssh_password: Optional[str] = None,
 ) -> Any:
     """Use an authenticated SSH master first for read-only shell commands."""
     if ssh_user and ssh_control_path:
@@ -435,6 +456,8 @@ def _run_readonly_bash_prefer_ssh(
                 command,
                 timeout=timeout,
                 control_path=ssh_control_path,
+                tmos_shell=ssh_tmos_shell,
+                password=ssh_password,
             )
         except Exception as ssh_exc:
             print(
@@ -451,6 +474,8 @@ def _run_readonly_bash_prefer_ssh(
         ssh_host=client.host if ssh_user else None,
         ssh_user=ssh_user,
         ssh_control_path=ssh_control_path,
+        ssh_tmos_shell=ssh_tmos_shell,
+        ssh_password=ssh_password,
     )
 
 
@@ -532,6 +557,8 @@ def check_license_dates(
     image_name: str,
     ssh_user: Optional[str] = None,
     ssh_control_path: Optional[str] = None,
+    ssh_tmos_shell: bool = False,
+    ssh_password: Optional[str] = None,
 ) -> CheckResult:
     """Validate the ISO license-check date against the device service date."""
     result_id = "LIC-001"
@@ -558,6 +585,8 @@ def check_license_dates(
             retry_delay=retry_delay,
             ssh_user=ssh_user,
             ssh_control_path=ssh_control_path,
+            ssh_tmos_shell=ssh_tmos_shell,
+            ssh_password=ssh_password,
         )
         version_path = next(
             (
@@ -580,6 +609,8 @@ def check_license_dates(
             retry_delay=retry_delay,
             ssh_user=ssh_user,
             ssh_control_path=ssh_control_path,
+            ssh_tmos_shell=ssh_tmos_shell,
+            ssh_password=ssh_password,
         )
         iso_date = _extract_yyyymmdd(_remote_command_output(date_response))
         if not iso_date:
@@ -594,6 +625,8 @@ def check_license_dates(
             retry_delay=retry_delay,
             ssh_user=ssh_user,
             ssh_control_path=ssh_control_path,
+            ssh_tmos_shell=ssh_tmos_shell,
+            ssh_password=ssh_password,
         )
         service_date = _extract_yyyymmdd(
             _remote_command_output(service_response)

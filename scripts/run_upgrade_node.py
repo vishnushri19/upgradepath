@@ -724,6 +724,10 @@ def main() -> int:
     flow.ssh_control_path = (
         ssh_session.control_path if os.name != "nt" else None
     )
+    flow.ssh_tmos_shell = ssh_session._uses_tmos_shell
+    flow.ssh_password = (
+        settings.password if scp_user == settings.username else None
+    )
 
     trace_call("scripts/run_upgrade_node.py:main", "scripts/run_upgrade_node.py:create_and_download_backups", "Create and download backup artifacts")
     backups_ok = create_and_download_backups(
