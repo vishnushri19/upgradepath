@@ -5,6 +5,7 @@ import os
 import shlex
 import subprocess
 import time
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -19,6 +20,12 @@ from f5upgrade.state_collector import StateCollector
 from f5upgrade.trace import trace_call
 
 from run_backup_artifacts import SSHSession, _run_backup_task
+
+
+if "--resume" in sys.argv:
+    from resume_upgrade_node import main as resume_main
+
+    raise SystemExit(resume_main())
 
 
 BACKUP_TIMEOUT = 1800
@@ -714,7 +721,9 @@ def main() -> int:
     )
     trace_call("scripts/run_upgrade_node.py:main", "scripts/run_backup_artifacts.py:SSHSession.open", "Open shared SSH connection for backups and ISO checks")
     ssh_session.open()
-    flow.ssh_control_path = ssh_session.control_path
+    flow.ssh_control_path = (
+        ssh_session.control_path if os.name != "nt" else None
+    )
 
     trace_call("scripts/run_upgrade_node.py:main", "scripts/run_upgrade_node.py:create_and_download_backups", "Create and download backup artifacts")
     backups_ok = create_and_download_backups(
@@ -774,6 +783,22 @@ def main() -> int:
         str(flow_md),
         report,
     )
+
+    if report["overall_status"] == "IN_PROGRESS":
+        print(
+            "\n[i] BIG-IP reports that the target-volume installation is "
+            "still in progress."
+        )
+        print(
+            "[-] The workflow stopped safely before reboot. Do not submit "
+            "the install command again."
+        )
+        print(
+            "[-] After the target volume is complete, resume with: "
+            "python scripts/run_upgrade_node.py --resume"
+        )
+        print(f"[-] See report details at: {flow_md}")
+        return 2
 
     if report["overall_status"] != "PASS":
         print(

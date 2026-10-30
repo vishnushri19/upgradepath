@@ -110,7 +110,7 @@ class StandaloneTopologyTests(unittest.TestCase):
 
 
 class ScpControlMasterTests(unittest.TestCase):
-    def run_upload(self, ssh_control_path=None):
+    def run_upload(self, ssh_control_path=None, ssh_password=None):
         digest = "a" * 64
         client = Mock()
         client.run_bash.return_value = {
@@ -118,6 +118,7 @@ class ScpControlMasterTests(unittest.TestCase):
         }
 
         with (
+            patch("f5upgrade.execution.os.name", "posix"),
             patch("f5upgrade.execution.get_failover_role", return_value="standby"),
             patch("f5upgrade.execution.os.path.isfile", return_value=True),
             patch("f5upgrade.execution.os.path.getsize", return_value=4),
@@ -133,6 +134,7 @@ class ScpControlMasterTests(unittest.TestCase):
                 scp_user="admin",
                 iso_local_path="test.iso",
                 ssh_control_path=ssh_control_path,
+                ssh_password=ssh_password,
             )
 
         return result, scp_run.call_args.args[0]
@@ -160,6 +162,35 @@ class ScpControlMasterTests(unittest.TestCase):
             command,
         )
         self.assertFalse(result.details["reused_ssh_controlmaster"])
+
+    def test_windows_scp_reuses_startup_password(self):
+        digest = "a" * 64
+        client = Mock()
+        client.run_bash.return_value = {
+            "commandResult": f"4\n{digest}  /shared/images/test.iso"
+        }
+
+        with (
+            patch("f5upgrade.execution.os.name", "nt"),
+            patch("f5upgrade.execution.get_failover_role", return_value="standby"),
+            patch("f5upgrade.execution.os.path.isfile", return_value=True),
+            patch("f5upgrade.execution.os.path.getsize", return_value=4),
+            patch("f5upgrade.execution._sha256_file", return_value=digest),
+            patch(
+                "f5upgrade.execution.run_windows_ssh_with_password",
+                return_value=SimpleNamespace(returncode=0),
+            ) as ssh_run,
+        ):
+            result = exec_upload_iso_standby(
+                client,
+                host="192.0.2.10",
+                scp_user="admin",
+                iso_local_path="test.iso",
+                ssh_password="password",
+            )
+
+        self.assertEqual("PASS", result.status)
+        self.assertEqual("password", ssh_run.call_args.args[1])
 
 
 class LicenseValidationOutputTests(unittest.TestCase):

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from f5upgrade.config import load_settings
+from f5upgrade.ssh_auth import run_windows_ssh_with_password
 
 
 SSH_TIMEOUT = 30
@@ -120,6 +121,20 @@ class SSHSession:
 
     def _base_opts(self) -> List[str]:
         """Options shared by SSH and SCP."""
+        if os.name == "nt":
+            return [
+                "-o",
+                "ControlMaster=no",
+                "-o",
+                "ControlPath=none",
+                "-o",
+                "ControlPersist=no",
+                "-o",
+                "MACs=+hmac-sha1",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+            ]
+
         return [
             "-o",
             f"ControlPath={self.control_path}",
@@ -178,6 +193,28 @@ class SSHSession:
 
     def open(self) -> None:
         """Open the shared SSH master connection."""
+        if os.name == "nt":
+            command = [
+                "ssh",
+                *self._base_opts(),
+                self.target,
+                "tmsh show sys version",
+            ]
+            completed = run_windows_ssh_with_password(
+                command,
+                self.password or "",
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    "Windows SSH connection failed; stopping before backups."
+                )
+            if self.password:
+                print(
+                    "\n[+] Windows SSH authentication will reuse the "
+                    "password entered at startup."
+                )
+            return
+
         command = [
             "ssh",
             "-o",
@@ -233,6 +270,14 @@ class SSHSession:
             remote_command,
         ]
 
+        if os.name == "nt" and self.password:
+            return run_windows_ssh_with_password(
+                ssh_command,
+                self.password,
+                capture_output=True,
+                text=True,
+                timeout=timeout_sec,
+            )
         return subprocess.run(
             ssh_command,
             capture_output=True,
@@ -263,6 +308,14 @@ class SSHSession:
             str(local_dir),
         ]
 
+        if os.name == "nt" and self.password:
+            return run_windows_ssh_with_password(
+                scp_command,
+                self.password,
+                capture_output=True,
+                text=True,
+                timeout=timeout_sec,
+            )
         return subprocess.run(
             scp_command,
             capture_output=True,

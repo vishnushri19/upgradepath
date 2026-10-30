@@ -15,6 +15,7 @@ import requests
 from .bigip_client import BigIPClient
 from .ha import get_failover_role
 from .report import CheckResult
+from .ssh_auth import run_windows_ssh_with_password
 
 
 @dataclass(frozen=True)
@@ -328,6 +329,8 @@ def _run_bash_via_ssh(
         "-o",
         f"ConnectTimeout={min(timeout, 30)}",
     ]
+    if os.name == "nt":
+        ssh_opts += ["-o", "MACs=+hmac-sha1"]
     if control_path:
         ssh_opts += [
             "-o",
@@ -921,6 +924,7 @@ def exec_upload_iso_standby(
     *,
     allow_standalone: bool = False,
     ssh_control_path: Optional[str] = None,
+    ssh_password: Optional[str] = None,
 ) -> CheckResult:
     """Upload the ISO to /shared/images on a standby BIG-IP."""
     result_id = "EXEC-UPLOAD-ISO-001"
@@ -969,6 +973,8 @@ def exec_upload_iso_standby(
     local_sha256 = _sha256_file(iso_local_path)
 
     command = ["scp", "-O"]
+    if os.name == "nt":
+        command.extend(["-o", "MACs=+hmac-sha1"])
     if ssh_control_path:
         command.extend(
             [
@@ -989,7 +995,14 @@ def exec_upload_iso_standby(
 
     started = time.monotonic()
     try:
-        completed = subprocess.run(command, timeout=3600)
+        if os.name == "nt" and ssh_password:
+            completed = run_windows_ssh_with_password(
+                command,
+                ssh_password,
+                timeout=3600,
+            )
+        else:
+            completed = subprocess.run(command, timeout=3600)
     except subprocess.TimeoutExpired:
         return CheckResult(
             id=result_id,
@@ -1109,6 +1122,7 @@ def exec_upload_files_standby(
     *,
     allow_standalone: bool = False,
     ssh_control_path: Optional[str] = None,
+    ssh_password: Optional[str] = None,
 ) -> List[CheckResult]:
     """Upload multiple ISO files sequentially, verifying each upload."""
     return [
@@ -1119,6 +1133,7 @@ def exec_upload_files_standby(
             iso_local_path=path,
             allow_standalone=allow_standalone,
             ssh_control_path=ssh_control_path,
+            ssh_password=ssh_password,
         )
         for path in iso_local_paths
     ]
@@ -1519,12 +1534,46 @@ def exec_volume_ready(
 
         time.sleep(interval_sec)
 
+    last_status = str(last.get("status", "")).lower()
+    if any(
+        state_name in last_status
+        for state_name in (
+            "installing",
+            "testing",
+            "copying",
+            "pending",
+            "waiting",
+            "validating",
+        )
+    ):
+        return CheckResult(
+            id=result_id,
+            category="Execution",
+            name=result_name,
+            status="IN_PROGRESS",
+            details={
+                "error": (
+                    "Monitoring timeout reached while BIG-IP still reported "
+                    "an in-progress volume installation. The installation "
+                    "may continue on the device; do not resubmit it."
+                ),
+                **last,
+                "expected_version": expect_version_contains,
+                "timeout_sec": timeout_sec,
+            },
+        )
+
     return CheckResult(
         id=result_id,
         category="Execution",
         name=result_name,
         status="FAIL",
-        details={"error": "Timeout waiting for target volume installation to complete.", **last, "expected_version": expect_version_contains, "timeout_sec": timeout_sec},
+        details={
+            "error": "Timeout waiting for target volume installation to complete.",
+            **last,
+            "expected_version": expect_version_contains,
+            "timeout_sec": timeout_sec,
+        },
     )
 
 

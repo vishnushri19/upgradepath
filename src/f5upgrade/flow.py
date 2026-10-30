@@ -419,6 +419,14 @@ class UpgradeFlow:
                 iso_local_paths=upload_paths,
                 allow_standalone=self._is_standalone,
                 ssh_control_path=self.ssh_control_path,
+                ssh_password=(
+                    self.settings.password
+                    if (
+                        os.name == "nt"
+                        and self.settings.scp_user == self.settings.username
+                    )
+                    else None
+                ),
             )
             results.extend(upload_results)
             for result in upload_results:
@@ -617,6 +625,8 @@ class UpgradeFlow:
         return answer in ("y", "yes")
 
     def should_stop(self, results: List[CheckResult]) -> bool:
+        if any(r.status == "IN_PROGRESS" for r in results):
+            return True
         if self.options.fail_fast and any(r.status == "FAIL" for r in results):
             return True
         if not self.options.allow_risk_accepted and any(

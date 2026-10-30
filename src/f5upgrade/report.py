@@ -11,7 +11,7 @@ class CheckResult:
     """
     Standardized result for any precheck/validation/execution step.
 
-    status must be one of: PASS | FAIL | RISK_ACCEPTED
+    status must be one of: PASS | FAIL | IN_PROGRESS | RISK_ACCEPTED
     """
     id: str
     category: str
@@ -24,14 +24,24 @@ def to_report(results: List[CheckResult], meta: Dict[str, Any]) -> Dict[str, Any
     """
     Convert a list of CheckResult objects into a single JSON-serializable report.
     """
-    summary: Dict[str, int] = {"PASS": 0, "FAIL": 0, "RISK_ACCEPTED": 0}
+    summary: Dict[str, int] = {
+        "PASS": 0,
+        "FAIL": 0,
+        "IN_PROGRESS": 0,
+        "RISK_ACCEPTED": 0,
+    }
 
     for r in results:
         if r.status not in summary:
             summary[r.status] = 0
         summary[r.status] += 1
 
-    overall_status = "FAIL" if summary.get("FAIL", 0) > 0 else "PASS"
+    if summary.get("FAIL", 0) > 0:
+        overall_status = "FAIL"
+    elif summary.get("IN_PROGRESS", 0) > 0:
+        overall_status = "IN_PROGRESS"
+    else:
+        overall_status = "PASS"
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -66,6 +76,7 @@ def write_markdown(path: str, payload: Dict[str, Any]) -> None:
     lines.append(f"- **Overall status:** {overall}")
     lines.append(f"- **PASS:** {summary.get('PASS', 0)}")
     lines.append(f"- **FAIL:** {summary.get('FAIL', 0)}")
+    lines.append(f"- **IN_PROGRESS:** {summary.get('IN_PROGRESS', 0)}")
     lines.append(f"- **RISK_ACCEPTED:** {summary.get('RISK_ACCEPTED', 0)}")
     lines.append("")
 
