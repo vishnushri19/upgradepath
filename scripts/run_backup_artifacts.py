@@ -113,6 +113,7 @@ class SSHSession:
 
         self.persist = f"{persist_minutes}m"
         self.is_open = False
+        self._uses_tmos_shell = False
         # When provided, this password (already collected once via the
         # BIG-IP REST password prompt) is used to authenticate the shared
         # SSH master connection non-interactively, via SSH_ASKPASS, so the
@@ -205,6 +206,23 @@ class SSHSession:
                 self.password or "",
             )
             if completed.returncode != 0:
+                tmos_command = [
+                    "ssh",
+                    *self._base_opts(),
+                    self.target,
+                    "show sys version",
+                ]
+                completed = run_windows_ssh_with_password(
+                    tmos_command,
+                    self.password or "",
+                )
+                if completed.returncode == 0:
+                    self._uses_tmos_shell = True
+                    print(
+                        "\n[+] TMOS SSH shell detected; backup commands "
+                        "will use run util bash."
+                    )
+            if completed.returncode != 0:
                 raise RuntimeError(
                     "Windows SSH connection failed; stopping before backups."
                 )
@@ -262,7 +280,10 @@ class SSHSession:
         timeout_sec: int,
     ) -> subprocess.CompletedProcess[str]:
         """Run a command over SSH."""
-        remote_command = f"bash -lc {shlex.quote(command)}"
+        if self._uses_tmos_shell:
+            remote_command = f"run util bash -c {shlex.quote(command)}"
+        else:
+            remote_command = f"bash -lc {shlex.quote(command)}"
         ssh_command = [
             "ssh",
             *self._base_opts(),
