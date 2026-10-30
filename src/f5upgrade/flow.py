@@ -369,8 +369,6 @@ class UpgradeFlow:
                 image_name,
                 ssh_user=self.settings.scp_user,
                 ssh_control_path=self.ssh_control_path,
-                ssh_tmos_shell=self.ssh_tmos_shell,
-                ssh_password=self.ssh_password,
             )
             required_images_present = required_images_present and image.found
         if not expected_names:
@@ -504,6 +502,8 @@ class UpgradeFlow:
                 or self.settings.username
             ),
             ssh_control_path=self.ssh_control_path,
+            ssh_tmos_shell=self.ssh_tmos_shell,
+            ssh_password=self.ssh_password,
         )
         results.append(license_result)
         trace_check("src/f5upgrade/execution.py:check_license_dates", license_result)
